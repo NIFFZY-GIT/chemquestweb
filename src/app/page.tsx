@@ -1,3 +1,4 @@
+// d:/Company/Projects/chemquestweb/chemquestweb/src/app/page.tsx
 import Link from 'next/link';
 import Image from 'next/image';
 

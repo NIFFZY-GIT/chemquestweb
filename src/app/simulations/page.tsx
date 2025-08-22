@@ -1,23 +1,28 @@
-import UnityPlayer from "@/app/components/UnityPlayer";
+// d:/Company/Projects/chemquestweb/chemquestweb/src/app/simulations/page.tsx
+import UnityPlayer from "@/components/UnityPlayer";
 
 export default function SimulationsPage() {
-  // IMPORTANT: Replace 'YourProjectName' with the actual name of your .data, .framework, etc. files.
-  // Check the filenames in your public/unity/MySimulation/Build folder.
-  const projectName = "YourProjectName"; 
+  // 1. Updated the project name to 'chemquest'
+  const projectName = "chemi"; 
 
   return (
-    <div className="flex flex-col items-center">
-      <h1 className="text-4xl font-bold my-8">Interactive Simulation</h1>
-      <p className="mb-4">
-        Loading the Unity WebGL project. Please wait...
-      </p>
-      <div className="w-full max-w-4xl border-4 border-gray-300 rounded-lg overflow-hidden">
+    <div className="flex flex-col items-center justify-center w-full min-h-screen py-8 bg-black">
+      <div className="w-full max-w-6xl px-4 text-center">
+        <h1 className="text-4xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-zinc-100 to-zinc-400 sm:text-5xl">
+          Interactive Simulation
+        </h1>
+        <p className="mt-4 text-lg text-zinc-400">
+          The simulation is loading below. Please allow a moment for the assets to download.
+        </p>
+      </div>
+
+      <div className="w-full max-w-6xl mt-8 aspect-video rounded-xl border border-zinc-800 overflow-hidden">
+        {/* 2. Updated the URLs to use the correct .unityweb extension */}
         <UnityPlayer
           loaderUrl={`/unity/MySimulation/Build/${projectName}.loader.js`}
-          dataUrl={`/unity/MySimulation/Build/${projectName}.data.gz`}
-          frameworkUrl={`/unity/MySimulation/Build/${projectName}.framework.js.gz`}
-          codeUrl={`/unity/MySimulation/Build/${projectName}.wasm.gz`}
-          buildUrl={""} // The buildUrl prop isn't used in this setup, but can be kept for consistency
+          dataUrl={`/unity/MySimulation/Build/${projectName}.data.unityweb`}
+          frameworkUrl={`/unity/MySimulation/Build/${projectName}.framework.js.unityweb`}
+          codeUrl={`/unity/MySimulation/Build/${projectName}.wasm.unityweb`}
         />
       </div>
     </div>
