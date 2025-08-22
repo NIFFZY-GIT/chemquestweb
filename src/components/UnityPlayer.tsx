@@ -27,6 +27,7 @@ declare global {
       config: UnityConfig,
       onProgress?: (progress: number) => void
     ) => Promise<UnityInstance>;
+  __chemquestUnityBusy?: boolean;
   }
 }
 
@@ -49,13 +50,31 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Keep a ref for the Unity instance so cleanup doesn't force effect to re-run
   const unityRef = useRef<UnityInstance | null>(null);
+  // Token to identify the current initialization session so stale onload handlers
+  // don't start new instances after this component has unmounted or reloaded.
+  const initTokenRef = useRef<number>(0);
+
+  // Small helper to detect whether the Unity runtime's Module and GLctx
+  // appear to be present. If they're missing, calling Quit() can trigger
+  // runtime errors inside the wasm that attempt to delete an already-missing
+  // GL context.
+  const canQuitSafely = () => {
+    try {
+      const w = window as unknown as { Module?: { GLctx?: unknown } };
+      return !!(w.Module && w.Module.GLctx);
+    } catch {
+      return false;
+    }
+  };
 
   useEffect(() => {
-    setIsLoading(true);
+  setIsLoading(true);
     // Preflight: confirm loader.js is reachable to provide clearer errors early
     const fullLoaderUrl = loaderUrl.startsWith("/") ? loaderUrl : loaderUrl;
 
-    const load = async () => {
+  // Capture the token at effect start to use in cleanup (avoids ref-change warnings).
+  const tokenOnMount = initTokenRef.current;
+  const load = async () => {
       try {
         // Check loader is reachable
         const head = await fetch(fullLoaderUrl, { method: "HEAD" });
@@ -69,7 +88,14 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
           script.async = true;
         }
 
+  // Capture a token for this load cycle. If cleanup runs it will bump the
+  // token and any pending onload handlers will no-op.
+  const myToken = tokenOnMount + 1;
+  initTokenRef.current = myToken;
+
         script.onload = () => {
+          // If this load is stale (component unmounted or reloaded), don't init.
+          if (myToken !== initTokenRef.current) return;
           if (!canvasRef.current) return;
 
           const config: UnityConfig = {
@@ -83,20 +109,69 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
           };
 
           // The third argument is the progress callback
-          window
-            .createUnityInstance(canvasRef.current, config, (progress) => {
-              // Update the loading progress state
-              setLoadingProgress(Math.round(progress * 100));
-            })
-            .then((instance) => {
-              // Once loaded, hide the loading bar and set the instance
-              setIsLoading(false);
-              setUnityInstance(instance);
-              unityRef.current = instance;
-            })
-            .catch((err) => {
-              console.error("createUnityInstance error:", err);
-            });
+          // Ensure the canvas has explicit pixel dimensions matching the
+          // Unity project's target resolution. This reduces the chance the
+          // runtime will encounter odd state during init/teardown.
+          const canvasEl = canvasRef.current as HTMLCanvasElement;
+          try {
+            // Set the logical drawing buffer size to 1920x1080 (native Unity)
+            canvasEl.width = 1920;
+            canvasEl.height = 1080;
+          } catch {
+            // ignore if assignment fails
+          }
+
+          // Prevent overlapping initializations across hot reloads or multiple
+          // mounts. If another instance is active, skip creating a new one.
+          if (window.__chemquestUnityBusy) {
+            console.warn('Unity instance already running; skip duplicate init.');
+            setIsLoading(false);
+            return;
+          }
+
+          try {
+            window.__chemquestUnityBusy = true;
+            window
+              .createUnityInstance(canvasRef.current as HTMLElement, config, (progress) => {
+                // Update the loading progress state
+                setLoadingProgress(Math.round(progress * 100));
+              })
+              .then((instance) => {
+                // If a newer init token exists, immediately quit this stale instance
+                if (myToken !== initTokenRef.current) {
+                  // This instance is stale. Only attempt to Quit() if the runtime
+                  // appears intact; otherwise just clear busy and forget the instance.
+                  if (canQuitSafely()) {
+                    instance
+                      .Quit()
+                      .catch(() => {
+                        /* ignore */
+                      })
+                      .finally(() => {
+                        window.__chemquestUnityBusy = false;
+                      });
+                  } else {
+                    console.warn('Stale Unity instance: runtime already torn down, skipping Quit()');
+                    window.__chemquestUnityBusy = false;
+                  }
+                  return;
+                }
+
+                // Once loaded, hide the loading bar and set the instance
+                setIsLoading(false);
+                setUnityInstance(instance);
+                unityRef.current = instance;
+              })
+                .catch((err) => {
+                  console.error("createUnityInstance error:", err);
+                  window.__chemquestUnityBusy = false;
+                  setIsLoading(false);
+                });
+          } catch (err) {
+            console.error('Failed to create Unity instance:', err);
+            window.__chemquestUnityBusy = false;
+            setIsLoading(false);
+          }
         };
 
         script.onerror = (e) => {
@@ -116,11 +191,41 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
     load();
 
     return () => {
-      // Best-effort cleanup of any loader script(s) that reference the /unity/ folder
-      const scripts = Array.from(document.querySelectorAll(`script[src*="/unity/"]`));
-  scripts.forEach((s) => s.parentNode?.removeChild(s));
-  // Optional: Properly quit the instance to free up memory
-  unityRef.current?.Quit();
+      // Attempt to gracefully quit the Unity instance to free resources.
+      // Don't eagerly remove loader scripts here — removing the loader while
+      // the wasm/module is still winding down can cause "GLctx is undefined"
+      // errors inside the Unity runtime. Instead, ask the instance to Quit()
+      // and clear our reference. We purposely do not remove script tags here.
+  // Mark pending loads as stale by advancing the token from the value
+  // captured when the effect started. This uses the captured `tokenOnMount`
+  // to avoid reading a ref that may have changed between render and cleanup.
+  initTokenRef.current = tokenOnMount + 1;
+
+      try {
+        const inst = unityRef.current;
+        if (inst) {
+          if (canQuitSafely()) {
+            inst
+              .Quit()
+              .catch((e) => console.warn('Unity Quit() failed:', e))
+              .finally(() => {
+                unityRef.current = null;
+                window.__chemquestUnityBusy = false;
+              });
+          } else {
+            console.warn('Skipping Quit() during cleanup: Module/GLctx missing');
+            unityRef.current = null;
+            window.__chemquestUnityBusy = false;
+          }
+        } else {
+          // If no instance, ensure the busy flag is cleared so a future mount can start.
+          window.__chemquestUnityBusy = false;
+        }
+      } catch (cleanupErr) {
+        console.warn('Unity cleanup error:', cleanupErr);
+        unityRef.current = null;
+        window.__chemquestUnityBusy = false;
+      }
     };
     // Do not include `unityInstance` in dependencies — when we set the instance the
     // effect would re-run and create a new instance repeatedly. Include the URLs
