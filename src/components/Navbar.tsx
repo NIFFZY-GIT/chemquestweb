@@ -41,7 +41,7 @@ const Navbar = () => {
         <nav className="relative bg-zinc-900 border-b border-zinc-800 shadow-md z-50">
             <div className="container mx-auto px-6 py-3 flex justify-between items-center">
                 <Link href="/" onClick={() => setIsMenuOpen(false)}>
-                    <Image src="/images/logo.png" alt="ChemQuest Logo" width={160} height={40} priority />
+                    <Image src="/images/logo1.png" alt="ChemQuest Logo" width={160} height={40} priority />
                 </Link>
 
                 {/* Desktop Navigation */}
