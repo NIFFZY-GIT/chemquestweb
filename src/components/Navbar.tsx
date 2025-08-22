@@ -26,13 +26,15 @@ const Navbar = () => {
     const navLinks = user 
         ? [ // Links for LOGGED IN users
             { href: "/", label: "Home" },
+                  { href: "/join", label: "Join Class" },
             { href: "/simulations", label: "Simulations" },
             { href: "/classroom/dashboard", label: "Dashboard" },
           ]
         : [ // Links for LOGGED OUT users
             { href: "/", label: "Home" },
-            { href: "/simulations", label: "Simulations" },
-            { href: "/classroom", label: "Classroom" },
+      
+            { href: "/classroom", label: "Classroom Dashboard" },
+               { href: "/simulations", label: "Simulations" },
           ];
 
     return (
