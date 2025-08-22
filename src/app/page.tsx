@@ -50,13 +50,16 @@ export default function HomePage() {
         <div className="container mx-auto">
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-2 backdrop-blur-sm">
              {/* ACTION: Replace with an actual screenshot of your amazing simulation! */}
-            <Image
-              src="/images/simulation-preview.png" // <--- UPDATE THIS IMAGE PATH
-              alt="Simulation Preview"
-              width={1200}
-              height={675}
-              className="rounded-lg"
-            />
+   <div className="flex justify-center items-center h-screen">
+  <Image
+    src="/images/p1.png"
+    alt="Simulation Preview"
+    width={1200}
+    height={675}
+    className="rounded-lg"
+  />
+</div>
+
           </div>
         </div>
       </section>
