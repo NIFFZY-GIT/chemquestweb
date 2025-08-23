@@ -1,20 +1,20 @@
 import { NextResponse } from 'next/server';
 
-// The function must be named after the HTTP method (GET, POST, etc.)
-export async function GET(request, { params }) {
-  // 1. In the App Router, the dynamic part comes from the `params` object.
-  const { unitId } = params;
+// The function signature and logic remain the same.
+export async function GET(request, context) {
+  
+  // THE FIX: Instead of destructuring {params} in the function signature,
+  // we access it from the 'context' object directly.
+  const unitId = context.params.unitId;
 
-  // 2. Define the URL of the real, external API
+  // The rest of the code is identical
   const externalApiUrl = `https://alchemquest.online/questions/unit/${unitId}`;
 
   try {
-    // 3. Make a request from your server to the external API
     const apiResponse = await fetch(externalApiUrl);
 
     if (!apiResponse.ok) {
       console.error(`Error from external API: ${apiResponse.statusText}`);
-      // Return an error response using NextResponse
       return NextResponse.json(
         { message: 'Failed to load question from external source.' },
         { status: apiResponse.status }
@@ -22,8 +22,6 @@ export async function GET(request, { params }) {
     }
 
     const data = await apiResponse.json();
-
-    // 4. Send the data back to your Unity game using NextResponse
     return NextResponse.json(data);
 
   } catch (error) {
