@@ -4,7 +4,7 @@ import { useState } from "react";
 import UnityPlayer from "@/components/UnityPlayer";
 
 export default function SimulationsPage() {
-  const projectName = "chemquestweb6renderapi";
+  const projectName = "chemquestweb6";
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
 
   const handleStartSimulation = () => {
