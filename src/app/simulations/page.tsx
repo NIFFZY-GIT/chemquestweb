@@ -3,7 +3,7 @@ import UnityPlayer from "@/components/UnityPlayer";
 
 export default function SimulationsPage() {
   // 1. Updated the project name to 'chemquest'
-  const projectName = "chemquestweb3"; 
+  const projectName = "chemquestweb6renderapi"; 
 
   return (
     <div className="flex flex-col items-center justify-center w-full min-h-screen py-8 bg-black">
