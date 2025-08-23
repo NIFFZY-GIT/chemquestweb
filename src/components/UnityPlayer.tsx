@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from "react";
 
 // --- START: TYPE DEFINITIONS ---
 
-// Update the UnityInstance type to include the SetFullscreen method
 interface UnityInstance {
   SendMessage: (gameObjectName: string, methodName: string, value?: string | number | boolean) => void;
   Quit: () => Promise<void>;
@@ -27,37 +26,33 @@ declare global {
       config: UnityConfig,
       onProgress?: (progress: number) => void
     ) => Promise<UnityInstance>;
-  __chemquestUnityBusy?: boolean;
+    __chemquestUnityBusy?: boolean;
   }
 }
 
 // --- END: TYPE DEFINITIONS ---
 
+// --- START: MODIFICATION ---
+// Add onExit to the props interface
 interface UnityPlayerProps {
   loaderUrl: string;
   dataUrl: string;
   frameworkUrl: string;
   codeUrl: string;
+  onExit: () => void; // Callback function to notify the parent to exit
 }
+// --- END: MODIFICATION ---
 
-const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, frameworkUrl, codeUrl }) => {
-  // State to manage the Unity instance and loading progress
+const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, frameworkUrl, codeUrl, onExit }) => {
   const [unityInstance, setUnityInstance] = useState<UnityInstance | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
 
-  // Ref to hold the canvas element
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Keep a ref for the Unity instance so cleanup doesn't force effect to re-run
   const unityRef = useRef<UnityInstance | null>(null);
-  // Token to identify the current initialization session so stale onload handlers
-  // don't start new instances after this component has unmounted or reloaded.
   const initTokenRef = useRef<number>(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Small helper to detect whether the Unity runtime's Module and GLctx
-  // appear to be present. If they're missing, calling Quit() can trigger
-  // runtime errors inside the wasm that attempt to delete an already-missing
-  // GL context.
   const canQuitSafely = () => {
     try {
       const w = window as unknown as { Module?: { GLctx?: unknown } };
@@ -68,19 +63,15 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
   };
 
   useEffect(() => {
-  setIsLoading(true);
-    // Preflight: confirm loader.js is reachable to provide clearer errors early
+    setIsLoading(true);
     const fullLoaderUrl = loaderUrl.startsWith("/") ? loaderUrl : loaderUrl;
+    const tokenOnMount = initTokenRef.current;
 
-  // Capture the token at effect start to use in cleanup (avoids ref-change warnings).
-  const tokenOnMount = initTokenRef.current;
-  const load = async () => {
+    const load = async () => {
       try {
-        // Check loader is reachable
         const head = await fetch(fullLoaderUrl, { method: "HEAD" });
         if (!head.ok) throw new Error(`Loader not reachable: ${fullLoaderUrl} (${head.status})`);
 
-        // Don't inject the same script multiple times
         let script = Array.from(document.scripts).find((s) => s.src === fullLoaderUrl) as HTMLScriptElement | undefined;
         if (!script) {
           script = document.createElement("script");
@@ -88,41 +79,20 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
           script.async = true;
         }
 
-  // Capture a token for this load cycle. If cleanup runs it will bump the
-  // token and any pending onload handlers will no-op.
-  const myToken = tokenOnMount + 1;
-  initTokenRef.current = myToken;
+        const myToken = tokenOnMount + 1;
+        initTokenRef.current = myToken;
 
         script.onload = () => {
-          // If this load is stale (component unmounted or reloaded), don't init.
           if (myToken !== initTokenRef.current) return;
           if (!canvasRef.current) return;
 
-          const config: UnityConfig = {
-            dataUrl,
-            frameworkUrl,
-            codeUrl,
-            // You can match these to your Unity project's settings
-            companyName: "DefaultCompany",
-            productName: "LabX",
-            productVersion: "1.0",
-          };
-
-          // The third argument is the progress callback
-          // Ensure the canvas has explicit pixel dimensions matching the
-          // Unity project's target resolution. This reduces the chance the
-          // runtime will encounter odd state during init/teardown.
+          const config: UnityConfig = { dataUrl, frameworkUrl, codeUrl, companyName: "DefaultCompany", productName: "LabX", productVersion: "1.0" };
           const canvasEl = canvasRef.current as HTMLCanvasElement;
           try {
-            // Set the logical drawing buffer size to 1920x1080 (native Unity)
             canvasEl.width = 1920;
             canvasEl.height = 1080;
-          } catch {
-            // ignore if assignment fails
-          }
+          } catch { /* ignore */ }
 
-          // Prevent overlapping initializations across hot reloads or multiple
-          // mounts. If another instance is active, skip creating a new one.
           if (window.__chemquestUnityBusy) {
             console.warn('Unity instance already running; skip duplicate init.');
             setIsLoading(false);
@@ -133,52 +103,37 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
             window.__chemquestUnityBusy = true;
             window
               .createUnityInstance(canvasRef.current as HTMLElement, config, (progress) => {
-                // Update the loading progress state
                 setLoadingProgress(Math.round(progress * 100));
               })
               .then((instance) => {
-                // If a newer init token exists, immediately quit this stale instance
                 if (myToken !== initTokenRef.current) {
-                  // This instance is stale. Only attempt to Quit() if the runtime
-                  // appears intact; otherwise just clear busy and forget the instance.
                   if (canQuitSafely()) {
-                    instance
-                      .Quit()
-                      .catch(() => {
-                        /* ignore */
-                      })
-                      .finally(() => {
-                        window.__chemquestUnityBusy = false;
-                      });
+                    instance.Quit().catch(() => {}).finally(() => { window.__chemquestUnityBusy = false; });
                   } else {
                     console.warn('Stale Unity instance: runtime already torn down, skipping Quit()');
                     window.__chemquestUnityBusy = false;
                   }
                   return;
                 }
-
-                // Once loaded, hide the loading bar and set the instance
                 setIsLoading(false);
                 setUnityInstance(instance);
                 unityRef.current = instance;
               })
-                .catch((err) => {
-                  console.error("createUnityInstance error:", err);
-                  window.__chemquestUnityBusy = false;
-                  setIsLoading(false);
-                });
+              .catch((err) => {
+                console.error("createUnityInstance error:", err);
+                window.__chemquestUnityBusy = false;
+                setIsLoading(false);
+              });
           } catch (err) {
             console.error('Failed to create Unity instance:', err);
             window.__chemquestUnityBusy = false;
             setIsLoading(false);
           }
         };
-
         script.onerror = (e) => {
           console.error("Failed to load Unity loader script:", fullLoaderUrl, e);
           setIsLoading(false);
         };
-
         if (!Array.from(document.scripts).some((s) => s.src === fullLoaderUrl)) {
           document.body.appendChild(script);
         }
@@ -187,38 +142,24 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
         setIsLoading(false);
       }
     };
-
     load();
 
     return () => {
-      // Attempt to gracefully quit the Unity instance to free resources.
-      // Don't eagerly remove loader scripts here — removing the loader while
-      // the wasm/module is still winding down can cause "GLctx is undefined"
-      // errors inside the Unity runtime. Instead, ask the instance to Quit()
-      // and clear our reference. We purposely do not remove script tags here.
-  // Mark pending loads as stale by advancing the token from the value
-  // captured when the effect started. This uses the captured `tokenOnMount`
-  // to avoid reading a ref that may have changed between render and cleanup.
-  initTokenRef.current = tokenOnMount + 1;
-
+      initTokenRef.current = tokenOnMount + 1;
       try {
         const inst = unityRef.current;
         if (inst) {
           if (canQuitSafely()) {
-            inst
-              .Quit()
-              .catch((e) => console.warn('Unity Quit() failed:', e))
-              .finally(() => {
-                unityRef.current = null;
-                window.__chemquestUnityBusy = false;
-              });
+            inst.Quit().catch((e) => console.warn('Unity Quit() failed:', e)).finally(() => {
+              unityRef.current = null;
+              window.__chemquestUnityBusy = false;
+            });
           } else {
             console.warn('Skipping Quit() during cleanup: Module/GLctx missing');
             unityRef.current = null;
             window.__chemquestUnityBusy = false;
           }
         } else {
-          // If no instance, ensure the busy flag is cleared so a future mount can start.
           window.__chemquestUnityBusy = false;
         }
       } catch (cleanupErr) {
@@ -227,13 +168,25 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
         window.__chemquestUnityBusy = false;
       }
     };
-    // Do not include `unityInstance` in dependencies — when we set the instance the
-    // effect would re-run and create a new instance repeatedly. Include the URLs
-    // so the player will reload only when those change.
   }, [loaderUrl, dataUrl, frameworkUrl, codeUrl]);
 
-   return (
-    <div className="relative w-full h-full">
+  useEffect(() => {
+    const container = containerRef.current;
+    if (unityInstance && container) {
+      if (container.requestFullscreen) {
+        container.requestFullscreen().catch((err) => {
+          console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+          unityInstance.SetFullscreen(1);
+        });
+      } else {
+        console.warn("Browser Fullscreen API not available, falling back to Unity's SetFullscreen.");
+        unityInstance.SetFullscreen(1);
+      }
+    }
+  }, [unityInstance]);
+
+  return (
+    <div ref={containerRef} className="relative w-full h-full bg-black">
       <canvas
         ref={canvasRef}
         id="unity-canvas"
@@ -241,7 +194,6 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
         className="w-full h-full"
       ></canvas>
 
-      {/* Loading Overlay */}
       {isLoading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
           <div className="w-64 text-center">
@@ -256,6 +208,22 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
           </div>
         </div>
       )}
+
+      {/* --- START: MODIFICATION --- */}
+      {/* Controls Overlay (e.g., Exit button) */}
+      {!isLoading && unityInstance && (
+        <div className="absolute top-4 left-4 z-10">
+          <button
+            onClick={onExit} // Call the parent's exit function
+            className="p-2 bg-black/50 text-white rounded-md hover:bg-black/80 transition-colors flex items-center gap-2"
+            title="Exit Simulation"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <span>Exit</span>
+          </button>
+        </div>
+      )}
+      {/* --- END: MODIFICATION --- */}
     </div>
   );
 };
