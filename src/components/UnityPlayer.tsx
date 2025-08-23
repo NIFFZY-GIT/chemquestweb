@@ -232,19 +232,12 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
     // so the player will reload only when those change.
   }, [loaderUrl, dataUrl, frameworkUrl, codeUrl]);
 
-  const handleFullscreen = () => {
-    if (unityInstance) {
-      unityInstance.SetFullscreen(1);
-    }
-  };
-
    return (
     <div className="relative w-full h-full">
-      {/* 👇 ADD tabIndex={-1} TO THIS LINE 👇 */}
-   <canvas 
-        ref={canvasRef} 
-        id="unity-canvas" 
-        tabIndex={-1} 
+      <canvas
+        ref={canvasRef}
+        id="unity-canvas"
+        tabIndex={-1}
         className="w-full h-full"
       ></canvas>
 
@@ -261,19 +254,6 @@ const UnityPlayer: React.FC<UnityPlayerProps> = ({ loaderUrl, dataUrl, framework
             </div>
             <div className="text-zinc-400 text-sm mt-2">{loadingProgress}%</div>
           </div>
-        </div>
-      )}
-
-      {/* Controls Overlay (e.g., Fullscreen button) */}
-      {!isLoading && unityInstance && (
-        <div className="absolute bottom-4 right-4">
-          <button
-            onClick={handleFullscreen}
-            className="p-2 bg-black/50 text-white rounded-md hover:bg-black/80 transition-colors"
-            title="Fullscreen"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-          </button>
         </div>
       )}
     </div>
